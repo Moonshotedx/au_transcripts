@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Official Transcript - {{ student.name }}</title>
+    <link rel="stylesheet" href="enhanced_transcript_styles.css">
+</head>
+<body>
+    <div class="transcript-container">
+        <div class="header-section">
+            <div class="university-info">
+                <img src="{{ student.university_logo_path }}" alt="University Logo" class="logo">
+                <p class="established-text">{{ student.established_text }}</p>
+                <p class="university-address">{{ student.university_address }}</p>
+            </div>
+        </div>
+
+        <div class="divider-line"></div>
+
+        <div class="transcript-title">
+            <h2>CONSOLIDATED GRADE CARD</h2>
+        </div>
+
+        <div class="student-info-section">
+            <table class="info-table">
+                <tr>
+                    <td class="info-label">Name</td>
+                    <td class="info-value">{{ student.name | upper }}</td>
+                    <td class="info-label">Duration of the Program</td>
+                    <td class="info-value">{{ student.duration_of_program }}</td>
+                    <td class="photo-cell" rowspan="5">
+                        <div class="photo-container">
+                            <img src="{{ student.photo_path }}" alt="Student Photo" class="student-photo">
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="info-label">Reg No.</td>
+                    <td class="info-value">{{ student.srn }}</td>
+                    <td class="info-label">Medium of Instruction</td>
+                    <td class="info-value">{{ student.medium_of_instruction }}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Transcript No.</td>
+                    <td class="info-value">{{ student.transcript_number }}</td>
+                    <td class="info-label">Date of Issue</td>
+                    <td class="info-value">{{ student.date_of_issue }}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Year of Admission</td>
+                    <td class="info-value">{{ student.year_of_admission }}</td>
+                    <td class="info-label">Year of Completion</td>
+                    <td class="info-value">{{ student.year_of_completion }}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Program of Study</td>
+                    <td class="info-value" colspan="3">{{ student.program_of_study }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="courses-section">
+            <table class="courses-table-double">
+                <thead>
+                    <tr>
+                        <th class="sl-col">Sl No.</th>
+                        <th class="code-col">Course Code</th>
+                        <th class="title-col">Course Title</th>
+                        <th class="credits-col">Credits</th>
+                        <th class="grade-col">Grade</th>
+                        <th class="completion-col">Month & Year of Completion</th>
+
+                        <th class="spacer-col"></th> <th class="sl-col">Sl No.</th>
+                        <th class="code-col">Course Code</th>
+                        <th class="title-col">Course Title</th>
+                        <th class="credits-col">Credits</th>
+                        <th class="grade-col">Grade</th>
+                        <th class="completion-col">Month & Year of Completion</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set max_rows = [student.left_courses|length, student.right_courses|length]|max %}
+                    {% for i in range(max_rows) %}
+                    <tr>
+                        {% if i < student.left_courses|length %}
+                            {% set course = student.left_courses[i] %}
+                            <td class="text-center">{{ course.sl_no }}</td>
+                            <td class="text-center">{{ course['course_code'] }}</td>
+                            <td class="text-left">{{ course['course_title'] }}</td>
+                            <td class="text-center">{{ course['credits'] }}</td>
+                            <td class="text-center">{{ course.get('grade', course.get('grade', '')) }}</td>
+                            <td class="text-center">{{ course['month_year_completion'] }}</td>
+                            <td class="spacer-col"></td> {% else %}
+                            <td></td><td></td><td></td><td></td><td></td><td></td>
+                        {% endif %}
+                        
+                        {% if i < student.right_courses|length %}
+                            {% set course = student.right_courses[i] %}
+                            <td class="text-center">{{ course.sl_no }}</td>
+                            <td class="text-center">{{ course['course_code'] }}</td>
+                            <td class="text-left">{{ course['course_title'] }}</td>
+                            <td class="text-center">{{ course['credits'] }}</td>
+                            <td class="text-center">{{ course.get('grade', course.get('grade', '')) }}</td>
+                            <td class="text-center">{{ course['month_year_completion'] }}</td>
+                        {% else %}
+                            <td></td><td></td><td></td><td></td><td></td><td></td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="summary-section">
+            <table class="summary-table">
+                <tr>
+                    <td class="summary-label">Credits</td>
+                    <td class="summary-value">{{ student.total_credits}}</td>
+                    <td class="summary-label">CGPA</td>
+                    <td class="summary-value">{{ student.cgpa }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="bottom-section">
+            <div class="grading-section">
+                <p><strong>GRADE:</strong> O - 10(Outstanding), A+ - 9 (Excellent), A - 8 (Very Good), B+ - 7(Good), B - 6 (Above average), C+ - 5 (Average), C - 4 (Pass), F - 0 (Fail), Ab - 0 (Absent)</p>
+            </div>
+
+            <div class="footer-section">
+                <div class="signature-left">
+                    <div class="signature-line"></div>
+                    <p>VERIFIED BY</p>
+                </div>
+                <div class="signature-right">
+                    <div class="signature-line"></div>
+                    <p>REGISTRAR</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,10 @@
+streamlit
+pandas
+requests
+psycopg2-binary
+pypdf
+reportlab
+Pillow
+jinja2
+weasyprint
+python-dotenv
