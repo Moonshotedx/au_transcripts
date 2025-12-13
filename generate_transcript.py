@@ -7,7 +7,7 @@ from weasyprint import HTML, CSS
 from db.index import (
     DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT,
     NOCODB_SCHEMA, STUDENT_DETAILS_TABLE, STUDENT_COURSES_DETAILS_TABLE,
-    get_db_connection
+    get_db_connection, fetch_student_photo_url
 )
 
  
@@ -30,14 +30,38 @@ UNIVERSITY_PARAMS = {
     "university_logo_path": UNIVERSITY_LOGO_PATH,
 }
 
-def fetch_all_students_details(conn, specific_regn_no=None):
+def fetch_all_students_details(conn, specific_regn_no=None, year_of_completion=None, academic_course_id=None):
     """
     Fetches core student details from the student_details table.
-    If specific_regn_no is provided, fetches only that student.
+    All filter parameters are optional.
+    
+    Args:
+        conn: Database connection
+        specific_regn_no: Optional - Filter by specific registration number
+        year_of_completion: Optional - Filter by YEAR_OF_COMPLETION
+        academic_course_id: Optional - Filter by ACADEMIC_COURSE_ID
     """
     students = []
     try:
         with conn.cursor() as cur:
+            # Build dynamic WHERE clause
+            where_conditions = ['"consolidated_grade_card_flag" = 1']
+            params = []
+            
+            if specific_regn_no and specific_regn_no.strip():
+                where_conditions.append('"REGN_NO" = %s')
+                params.append(specific_regn_no.strip())
+            
+            if year_of_completion and year_of_completion.strip():
+                where_conditions.append('"YEAR_OF_COMPLETION" = %s')
+                params.append(year_of_completion.strip())
+            
+            if academic_course_id and academic_course_id.strip():
+                where_conditions.append('"ACADEMIC_COURSE_ID" = %s')
+                params.append(academic_course_id.strip())
+            
+            where_clause = ' AND '.join(where_conditions)
+            
             query = f"""
                 SELECT 
                     "REGN_NO" AS regn_no,
@@ -46,7 +70,7 @@ def fetch_all_students_details(conn, specific_regn_no=None):
                          WHEN "ACADEMIC_COURSE_ID" = 'BDes' THEN 'BDesign'
                          WHEN "ACADEMIC_COURSE_ID" = 'LS' THEN 'Life Sciences'
                          WHEN "ACADEMIC_COURSE_ID" = 'ES' THEN 'Energy Sciences'
-                         WHEN "ACADEMIC_COURSE_ID" = 'eMobility' THEN 'e-Mobility'
+                         WHEN "ACADEMIC_COURSE_ID" = 'eMob' THEN 'e-Mobility'
                          WHEN "ACADEMIC_COURSE_ID" = 'IT' THEN 'Interactive Technologies'
                          WHEN "ACADEMIC_COURSE_ID" = 'DT' THEN 'BTech Digital Transformation'
                          ELSE "ACADEMIC_COURSE_ID" 
@@ -59,15 +83,10 @@ def fetch_all_students_details(conn, specific_regn_no=None):
                     "CGPA" as cgpa,
                     "TOT_CREDIT" as total_credits
                 FROM "{NOCODB_SCHEMA}"."{STUDENT_DETAILS_TABLE}"
-                where "consolidated_grade_card_flag" = 1
+                WHERE {where_clause}
             """
             
-            if specific_regn_no:
-                query += f" AND \"REGN_NO\" = '{specific_regn_no}'"
-            
-            # query += " AND \"REGN_NO\" = 'AU21UG-006'" # Previous hardcoded test
-            
-            cur.execute(query)
+            cur.execute(query, tuple(params) if params else None)
             student_records = cur.fetchall()
             if cur.description:
                 columns = [desc[0] for desc in cur.description]
@@ -714,20 +733,33 @@ def process_single_student_transcript(conn, student_record, base_dir=BASE_DIR):
     }
 
     # Handle student photo path dynamically
+    # Priority: 1. NocoDB students_photos table, 2. Local file, 3. Placeholder
     student_photo_base_name = student_record.get('regn_no')
+    photo_found = False
+    
     if student_photo_base_name:
-        student_photo_filename_with_ext = f"{student_photo_base_name}.png"
-        full_photo_path = os.path.abspath(os.path.join(base_dir, "assets", student_photo_filename_with_ext))
-
-        # Check if the photo file actually exists
-        if os.path.exists(full_photo_path):
-            student_params['photo_path'] = 'file:///' + full_photo_path.replace('\\', '/')
-            print(f"  Photo path for {regn_no}: {student_params['photo_path']}")
+        # First, try to fetch photo from NocoDB
+        nocodb_photo_url = fetch_student_photo_url(student_photo_base_name)
+        
+        if nocodb_photo_url:
+            student_params['photo_path'] = nocodb_photo_url
+            print(f"  Photo from NocoDB for {regn_no}: {nocodb_photo_url[:50]}...")
+            photo_found = True
         else:
-            print(f"  Warning: Student photo file not found at {full_photo_path} for {regn_no}. Using placeholder.")
-            student_params['photo_path'] = 'https://placehold.co/75x90/aabbcc/000000?text=No+Photo' 
-    else:
-        print(f"  Warning: No registration number to form photo filename for student record: {student_record}. Using placeholder.")
+            # Fall back to local file
+            student_photo_filename_with_ext = f"{student_photo_base_name}.png"
+            full_photo_path = os.path.abspath(os.path.join(base_dir, "assets", student_photo_filename_with_ext))
+
+            # Check if the photo file actually exists
+            if os.path.exists(full_photo_path):
+                student_params['photo_path'] = 'file:///' + full_photo_path.replace('\\', '/')
+                print(f"  Photo from local file for {regn_no}: {student_params['photo_path']}")
+                photo_found = True
+            else:
+                print(f"  Warning: No photo found in NocoDB or local file for {regn_no}. Using placeholder.")
+    
+    if not photo_found:
+        print(f"  Warning: No registration number or photo available. Using placeholder.")
         student_params['photo_path'] = 'https://placehold.co/75x90/aabbcc/000000?text=No+Photo' 
 
     # Merge university-wide parameters
@@ -737,7 +769,9 @@ def process_single_student_transcript(conn, student_record, base_dir=BASE_DIR):
     student_course_data = fetch_student_courses_and_marks(conn, regn_no)
 
     if student_course_data:
-        output_name = f"{regn_no}_{student_params['name'].replace(' ', '_')}_Transcript.pdf"
+        # Add timestamp to filename to prevent overwriting
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_name = f"{regn_no}_{student_params['name'].replace(' ', '_')}_Transcript_{timestamp}.pdf"
         success = generate_transcript(
             student_params,
             student_course_data,

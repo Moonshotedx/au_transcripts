@@ -17,7 +17,7 @@ from psycopg2 import Error
 from db.index import (
     DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT,
     NOCODB_SCHEMA, STUDENT_DETAILS_TABLE, STUDENT_COURSES_DETAILS_TABLE,
-    get_db_connection
+    get_db_connection, fetch_student_photo_url
 )
 
 
@@ -66,43 +66,67 @@ class GradeCardGenerator:
         else:
             print(f"Font file not found: {regular}. Using default Helvetica.")
 
-    def process_photo(self, filename, width, height):
-        photo_path = self.photo_dir / filename
-        # print(f"DEBUG: In process_photo: Attempting to open photo at: {photo_path}") # Debug print for path
-
-        if not photo_path.exists():
-            print(f"Warning: Student photo not found at {photo_path}. Using placeholder.")
-            return None # Indicate no photo found, create_overlay will handle placeholder
+    def process_photo(self, filename, width, height, photo_url=None):
+        """
+        Process a student photo for the grade card.
+        Priority: 1. photo_url (from NocoDB), 2. Local file, 3. Returns None (placeholder will be used)
+        """
+        import requests
+        from io import BytesIO
         
-        # print(f"DEBUG: Photo file found: {photo_path}") # Debug print for file found
-
+        img = None
+        
+        # First, try to fetch from URL (NocoDB)
+        if photo_url:
+            try:
+                response = requests.get(photo_url, timeout=10)
+                if response.status_code == 200:
+                    img = Image.open(BytesIO(response.content))
+                    print(f"  Photo loaded from NocoDB URL for {filename}")
+            except Exception as e:
+                print(f"Warning: Could not fetch photo from URL for {filename}: {e}")
+        
+        # Fall back to local file if URL fetch failed or not provided
+        if img is None:
+            photo_path = self.photo_dir / filename
+            if photo_path.exists():
+                try:
+                    img = Image.open(photo_path)
+                    print(f"  Photo loaded from local file: {photo_path}")
+                except Exception as e:
+                    print(f"Error opening local photo {photo_path}: {e}")
+            else:
+                print(f"Warning: Student photo not found at {photo_path}. Using placeholder.")
+        
+        if img is None:
+            return None  # Indicate no photo found, create_overlay will handle placeholder
+        
         try:
-            with Image.open(photo_path) as img:
-                # Ensure image is in RGB mode for JPEG saving, handle potential RGBA/P modes
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                
-                # Resize and create background
-                img_copy = img.copy() # Work on a copy to avoid issues with original image state
-                img_copy.thumbnail((width, height), Image.Resampling.LANCZOS)
-                bg = Image.new("RGB", (width, height), "white")
-                offset = ((width - img_copy.width) // 2, (height - img_copy.height) // 2)
-                bg.paste(img_copy, offset)
-                
-                enhancer = ImageEnhance.Sharpness(bg)
-                bg = enhancer.enhance(1.2)
+            # Ensure image is in RGB mode for JPEG saving
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Resize and create background
+            img_copy = img.copy()
+            img_copy.thumbnail((width, height), Image.Resampling.LANCZOS)
+            bg = Image.new("RGB", (width, height), "white")
+            offset = ((width - img_copy.width) // 2, (height - img_copy.height) // 2)
+            bg.paste(img_copy, offset)
+            
+            enhancer = ImageEnhance.Sharpness(bg)
+            bg = enhancer.enhance(1.2)
 
             # Save the processed image to a BytesIO object (in-memory)
             img_byte_arr = BytesIO()
-            bg.save(img_byte_arr, format='JPEG') # Save as JPEG
-            img_byte_arr.seek(0) # Rewind the buffer to the beginning
+            bg.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
             
-            return img_byte_arr # Return the BytesIO object
+            return img_byte_arr
             
         except Exception as e:
-            print(f"Error processing photo {photo_path}: {e}. Using placeholder.")
+            print(f"Error processing photo {filename}: {e}. Using placeholder.")
             return None
 
     def create_placeholder_photo(self, width=68, height=85):
@@ -138,10 +162,15 @@ class GradeCardGenerator:
         c.drawString(*self.coordinates["total_credits"], str(student_info.get("total_credits", "0")))
         c.drawString(*self.coordinates["cgpa"], str(student_info.get("cgpa", "0.00")))
 
-        # Photo
+        # Photo - fetch from NocoDB first, then fall back to local file
         photo_filename = student_info.get("photo_filename")
+        reg_no = student_info.get("reg_no")
+        
+        # Fetch photo URL from NocoDB
+        photo_url = fetch_student_photo_url(reg_no) if reg_no else None
+        
         # process_photo now returns a BytesIO object or None
-        processed_photo_data = self.process_photo(photo_filename, 68, 85) 
+        processed_photo_data = self.process_photo(photo_filename, 68, 85, photo_url=photo_url) 
         
         cfg = self.coordinates["photo"] # Define cfg once
 
@@ -228,7 +257,9 @@ class GradeCardGenerator:
             if not output_filename:
                 safe_name = student_info.get("name", "Unknown").replace(' ', '_').replace('.', '')
                 reg_no = student_info.get("reg_no", "N_A")
-                output_filename = f"{reg_no}_{safe_name}_GradeCard.pdf"
+                # Add timestamp to filename to prevent overwriting
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"{reg_no}_{safe_name}_GradeCard_{timestamp}.pdf"
             output_path = self.output_dir / output_filename
             self.merge_pdf(overlay, output_path)
             print(f"Generated grade card for {student_info.get('name', 'Unknown')} ({student_info.get('reg_no', 'N/A')}) → {output_path}")
@@ -241,10 +272,16 @@ class GradeCardGenerator:
         return get_db_connection()
 
     # --- Method to fetch all data from DB ---
-    def fetch_all_gradecard_data(self, year_flag=2, admission_year=2021):
+    def fetch_all_gradecard_data(self, year_flag=2, admission_year=2021, regn_no=None, academic_course_id=None):
         """
         Fetches all student details and their corresponding course marks from PostgreSQL
         and prepares them for grade card generation.
+        
+        Args:
+            year_flag: Required - Year flag filter
+            admission_year: Required - Admission year filter
+            regn_no: Optional - Filter by specific student registration number
+            academic_course_id: Optional - Filter by academic course ID (e.g., 'FOU', 'BDes')
         """
         all_students_grade_data = []
         conn = None
@@ -255,8 +292,23 @@ class GradeCardGenerator:
                 return []
 
             with conn.cursor() as cur:
+                # Build dynamic WHERE clause
+                where_conditions = ['"YEAR_FLAG"=%s', '"ADMISSION_YEAR"=%s']
+                params = [year_flag, admission_year]
+                
+                # Add optional filters
+                if regn_no and regn_no.strip():
+                    where_conditions.append('"REGN_NO"=%s')
+                    params.append(regn_no.strip())
+                
+                if academic_course_id and academic_course_id.strip():
+                    where_conditions.append('"ACADEMIC_COURSE_ID"=%s')
+                    params.append(academic_course_id.strip())
+                
+                where_clause = ' AND '.join(where_conditions)
+                
                 # 1. Fetch all main student details
-                cur.execute(f"""
+                query = f"""
                     SELECT
                         "REGN_NO",
                         "CNAME",
@@ -269,8 +321,9 @@ class GradeCardGenerator:
                        -- CONCAT('AU/21/UG/',RIGHT("REGN_NO",3)) AS transcript_number,
                         "CUMULATIVE_CREDITS"
                     FROM "{NOCODB_SCHEMA}"."{STUDENT_DETAILS_TABLE}"
-                    WHERE "YEAR_FLAG"=%s AND "ADMISSION_YEAR"=%s;
-                """, (year_flag, admission_year))
+                    WHERE {where_clause};
+                """
+                cur.execute(query, tuple(params))
                 student_records = cur.fetchall()
                 student_cols = [desc[0] for desc in cur.description]
                 
@@ -332,7 +385,7 @@ class GradeCardGenerator:
                     elif academic_course_id == 'eMob': program_name = 'e-Mobility'
                     elif academic_course_id == 'IT': program_name = 'Interactive Technologies'
                     elif academic_course_id == 'DT': program_name = 'Digital Transformation'
-                    elif academic_course_id == 'BBA': program_name = 'Year II BBA'
+                    elif academic_course_id == 'BBA': program_name = 'BBA'
                     else: program_name = student_db_info.get("COURSE_NAME", "N/A") # Fallback to COURSE_NAME if available
 
 
