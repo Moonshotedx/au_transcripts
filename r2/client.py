@@ -172,25 +172,20 @@ class R2Client:
             List of dictionaries containing file information
         """
         try:
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=prefix
-            )
+            files = []
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix):
+                for obj in page.get('Contents', []):
+                    files.append({
+                        'key': obj['Key'],
+                        'size': obj['Size'],
+                        'last_modified': obj['LastModified']
+                    })
             
-            if 'Contents' not in response:
+            if not files:
                 print(f"No files found with prefix '{prefix}'")
-                return []
-            
-            files = [
-                {
-                    'key': obj['Key'],
-                    'size': obj['Size'],
-                    'last_modified': obj['LastModified']
-                }
-                for obj in response['Contents']
-            ]
-            
-            print(f"✓ Found {len(files)} file(s)")
+            else:
+                print(f"✓ Found {len(files)} file(s)")
             return files
         except ClientError as e:
             print(f"✗ Error listing files: {e}")

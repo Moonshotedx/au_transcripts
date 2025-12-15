@@ -766,7 +766,7 @@ def process_single_student_transcript(conn, student_record, base_dir=BASE_DIR):
                 print(f"  Warning: No photo found in NocoDB or local file for {regn_no}. Using placeholder.")
     
     if not photo_found:
-        print(f"  Warning: No registration number or photo available. Using placeholder.")
+        print("  Warning: No registration number or photo available. Using placeholder.")
         student_params['photo_path'] = 'https://placehold.co/75x90/aabbcc/000000?text=No+Photo' 
 
     # Merge university-wide parameters

@@ -13,6 +13,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.utils import ImageReader
 from pypdf import PdfReader, PdfWriter
 import psycopg2
+import requests
 from psycopg2 import Error
 from db.index import (
     DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT,
@@ -71,9 +72,6 @@ class GradeCardGenerator:
         Process a student photo for the grade card.
         Priority: 1. photo_url (from NocoDB), 2. Local file, 3. Returns None (placeholder will be used)
         """
-        import requests
-        from io import BytesIO
-        
         img = None
         
         # First, try to fetch from URL (NocoDB)

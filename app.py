@@ -59,7 +59,7 @@ if page == "Course Details":
         get_url = f"{NOCODB_API_BASE}/{table_name}?filter={encoded_filter_segment}"
 
         try:
-            response = requests.get(get_url, headers=HEADERS)
+            response = requests.get(get_url, headers=HEADERS, timeout=30)
             
             record_id = None
             if response.status_code == 200:
@@ -71,11 +71,11 @@ if page == "Course Details":
             
             if record_id:
                 update_url = f"{NOCODB_API_BASE}/{table_name}/{record_id}"
-                res = requests.patch(update_url, headers=HEADERS, data=json.dumps(record))
+                res = requests.patch(update_url, headers=HEADERS, data=json.dumps(record), timeout=30)
                 action = "UPDATED"
             else:
                 create_url = f"{NOCODB_API_BASE}/{table_name}"
-                res = requests.post(create_url, headers=HEADERS, data=json.dumps(record))
+                res = requests.post(create_url, headers=HEADERS, data=json.dumps(record), timeout=30)
                 action = "CREATED"
 
             if not res.ok:
@@ -185,7 +185,7 @@ if page == "Course Details":
         long_df = long_df.rename(columns=reverse_temp_rename_mapping)
 
         # Clean up rows where subject data is missing
-        long_df_cleaned = long_df.dropna(subset=['SUBJECT_NAME', 'SUBJECT_CODE'], how='all')
+        long_df_cleaned = long_df.dropna(subset=['SUBJECT_NAME', 'SUBJECT_CODE'], how='all').copy()
         
         # Debug: Show sample data
         if len(long_df_cleaned) > 0:
@@ -243,6 +243,9 @@ if page == "Course Details":
     
     uploaded_file = st.file_uploader("Upload Student CSV", type=['csv'])
     
+    # Initialize variables before conditional block
+    data_exists = False
+    
     # Show preview and validation if file is uploaded
     if uploaded_file is not None:
         df_preview = pd.read_csv(uploaded_file)
@@ -265,7 +268,7 @@ if page == "Course Details":
                 encoded_filter = quote(filter_segment)
                 check_url = f"{NOCODB_API_BASE}/{STUDENT_COURSES_DETAILS_TABLE}?where={encoded_filter}&limit=1"
                 
-                response = requests.get(check_url, headers=HEADERS)
+                response = requests.get(check_url, headers=HEADERS, timeout=30)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get('list') and len(data['list']) > 0:
@@ -303,7 +306,7 @@ if page == "Course Details":
     if st.button("Start Processing & Sync", disabled=not can_proceed if uploaded_file is not None and data_exists else False):
         if uploaded_file is None:
             st.error("Please upload a CSV file first.")
-        elif uploaded_file is not None and 'data_exists' in dir() and data_exists and not can_proceed:
+        elif data_exists and not can_proceed:
             st.error("Please click 'Proceed Anyway' button to confirm syncing with existing data.")
         else:
             log_container = st.container()
@@ -356,7 +359,7 @@ elif page == "Student Details":
         get_url = f"{NOCODB_API_BASE}/{table_name}?filter={encoded_filter_segment}"
         
         try:
-            response = requests.get(get_url, headers=HEADERS)
+            response = requests.get(get_url, headers=HEADERS, timeout=30)
         except Exception as e:
             log_container.error(f"Request failed: {e}")
             return
@@ -375,11 +378,11 @@ elif page == "Student Details":
         if record_id:
             update_url = f"{NOCODB_API_BASE}/{table_name}/{record_id}"
             log_container.info(f"Updating record {record_id}...")
-            res = requests.patch(update_url, headers=HEADERS, data=json.dumps(record))
+            res = requests.patch(update_url, headers=HEADERS, data=json.dumps(record), timeout=30)
         else:
             create_url = f"{NOCODB_API_BASE}/{table_name}"
             log_container.info(f"Creating new record...")
-            res = requests.post(create_url, headers=HEADERS, data=json.dumps(record))
+            res = requests.post(create_url, headers=HEADERS, data=json.dumps(record), timeout=30)
         
         if not res.ok:
             log_container.error(f"Error syncing record. Status: {res.status_code}. Response: {res.text}")
@@ -486,7 +489,7 @@ elif page == "Student Details":
                         encoded_filter = quote(filter_segment)
                         check_url = f"{NOCODB_API_BASE}/{STUDENT_DETAILS_TABLE}?where={encoded_filter}&limit=1"
                         
-                        response = requests.get(check_url, headers=HEADERS)
+                        response = requests.get(check_url, headers=HEADERS, timeout=30)
                         if response.status_code == 200:
                             data = response.json()
                             if data.get('list') and len(data['list']) > 0:
@@ -579,7 +582,7 @@ elif page == "Student Details":
                         encoded_filter = quote(filter_segment)
                         check_url = f"{NOCODB_API_BASE}/{STUDENT_DETAILS_TABLE}?where={encoded_filter}&limit=1"
                         
-                        response = requests.get(check_url, headers=HEADERS)
+                        response = requests.get(check_url, headers=HEADERS, timeout=30)
                         if response.status_code == 200:
                             data = response.json()
                             if data.get('list') and len(data['list']) > 0:

@@ -8,8 +8,10 @@ Configuration is loaded from environment variables using python-dotenv.
 
 import os
 import psycopg2
+import requests
 from psycopg2 import Error
 from dotenv import load_dotenv
+from urllib.parse import quote, urlparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -87,9 +89,6 @@ def fetch_student_photo_url(regn_no):
     Returns:
         str: The STUDENT_IMAGE URL if found, None otherwise
     """
-    import requests
-    from urllib.parse import quote, urlparse
-    
     if not regn_no:
         return None
     
@@ -104,7 +103,7 @@ def fetch_student_photo_url(regn_no):
     get_url = f"{NOCODB_API_BASE}/{STUDENTS_PHOTOS_TABLE}?where={encoded_filter}"
     
     try:
-        response = requests.get(get_url, headers=NOCODB_HEADERS)
+        response = requests.get(get_url, headers=NOCODB_HEADERS, timeout=30)
         
         if response.status_code == 200:
             response_json = response.json()
