@@ -624,10 +624,11 @@ elif page == "Student Details":
 elif page == "Grade Card Generator":
     from grade_card_generator import GradeCardGenerator
     from db.index import DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT
+    from r2 import generate_batch_timestamp, upload_grade_card, get_presigned_url, list_grade_cards, get_latest_batch_folder, download_batch_as_zip
     import traceback
     
     st.title(":card_index: Grade Card Generator")
-    st.markdown("Generate PDF Grade Cards from PostgreSQL data.")
+    st.markdown("Generate PDF Grade Cards from PostgreSQL data and upload to R2 storage.")
     
     # Set default values for directories
     base_dir = os.getcwd()
@@ -686,9 +687,6 @@ elif page == "Grade Card Generator":
                     photo_dir=str(photo_dir)
                 )
                 
-                # Database credentials are now loaded from environment variables via db.index
-                # No need to override as GradeCardGenerator uses centralized config
-                
                 # Fetch Data with optional filters
                 data = generator.fetch_all_gradecard_data(
                     year_flag=int(year_flag), 
@@ -705,32 +703,106 @@ elif page == "Grade Card Generator":
                     total_students = len(data)
                     st.info(f"Found {total_students} students. Starting generation...")
                     
+                    # Generate batch timestamp for R2 folder
+                    batch_timestamp = generate_batch_timestamp()
+                    
                     generated_count = 0
+                    r2_uploaded_count = 0
+                    r2_keys = []
+                    
                     for i, item in enumerate(data):
                         student_name = item['student_info'].get('name', 'Unknown')
                         reg_no = item['student_info'].get('reg_no', 'N/A')
                         
-                        status_text.text(f"Generating {generated_count + 1}/{total_students}: {student_name} ({reg_no})")
+                        status_text.text(f"Generating {i + 1}/{total_students}: {student_name} ({reg_no})")
                         
-                        generator.generate_certificate(
+                        # Generate grade card and get the output path
+                        output_path = generator.generate_certificate(
                             student_info=item['student_info'],
                             student_marks=item['student_marks']
                         )
                         
-                        generated_count += 1
-                        progress_bar.progress(generated_count / total_students)
+                        if output_path:
+                            generated_count += 1
+                            
+                            # Upload to R2
+                            status_text.text(f"Uploading to R2 {i + 1}/{total_students}: {student_name} ({reg_no})")
+                            success, r2_key = upload_grade_card(
+                                file_path=output_path,
+                                batch_timestamp=batch_timestamp,
+                                regn_no=reg_no,
+                                student_name=student_name
+                            )
+                            
+                            if success and r2_key:
+                                r2_uploaded_count += 1
+                                r2_keys.append(r2_key)
+                        
+                        progress_bar.progress((i + 1) / total_students)
                     
                     status_text.text("Generation Complete!")
                     st.balloons()
-                    st.success(f"Successfully generated {generated_count} grade cards in '{output_dir_name}' directory.")
+                    st.success(f"Successfully generated {generated_count} grade cards.")
                     
-                    # Optional: Show list of generated files
-                    with st.expander("View Generated Files Log"):
-                        st.write(f"Generated {generated_count} files.")
+                    if r2_uploaded_count > 0:
+                        st.success(f"✅ Uploaded {r2_uploaded_count} grade cards to R2 (Folder: `{batch_timestamp}`)")
+                    
+                    # Show uploaded files with download links
+                    if r2_keys:
+                        with st.expander("📁 View Uploaded Files & Download Links"):
+                            st.write(f"**R2 Folder:** `gradecards/{batch_timestamp}/`")
+                            st.write(f"**Total Files:** {len(r2_keys)}")
+                            st.markdown("---")
+                            for r2_key in r2_keys:
+                                filename = r2_key.split('/')[-1]
+                                download_url = get_presigned_url(r2_key)
+                                if download_url:
+                                    st.markdown(f"📄 [{filename}]({download_url})")
+                                else:
+                                    st.text(f"📄 {filename} (URL unavailable)")
                     
             except Exception as e:
                 st.error(f"An error occurred: {e}")
                 st.code(traceback.format_exc())
+    
+    st.markdown("---")
+    
+    # Download Section - At Bottom
+    st.subheader("📥 Download Grade Cards")
+    st.markdown("Download all grade cards from the latest batch folder in R2 storage.")
+    
+    col_download, col_info = st.columns([1, 2])
+    with col_download:
+        if st.button("Download Latest Batch", key="download_gradecards_btn"):
+            with st.spinner("Preparing download..."):
+                zip_data, batch_ts, file_count = download_batch_as_zip('gradecards')
+                if zip_data and file_count > 0:
+                    st.session_state['gradecard_zip_data'] = zip_data
+                    st.session_state['gradecard_batch_ts'] = batch_ts
+                    st.session_state['gradecard_file_count'] = file_count
+                    st.success(f"✅ Ready! Found {file_count} files in batch `{batch_ts}`")
+                elif batch_ts:
+                    st.warning(f"No files found in batch `{batch_ts}`")
+                else:
+                    st.warning("No batch folders found in R2 storage.")
+    
+    with col_info:
+        # Show latest batch info
+        latest_batch = get_latest_batch_folder('gradecards')
+        if latest_batch:
+            st.info(f"📁 Latest batch folder: `{latest_batch}`")
+        else:
+            st.info("📁 No batch folders found yet.")
+    
+    # Show download link if data is ready
+    if 'gradecard_zip_data' in st.session_state and st.session_state['gradecard_zip_data']:
+        st.download_button(
+            label=f"⬇️ Download ZIP ({st.session_state['gradecard_file_count']} files)",
+            data=st.session_state['gradecard_zip_data'],
+            file_name=f"gradecards_{st.session_state['gradecard_batch_ts']}.zip",
+            mime="application/zip",
+            key="download_gradecard_zip"
+        )
     
     st.markdown("---")
     st.caption("Grade Card Generator Tool")
@@ -748,9 +820,10 @@ elif page == "Transcript Generator":
         create_enhanced_styles,
         OUTPUT_DIR
     )
+    from r2 import generate_batch_timestamp, upload_transcript, get_presigned_url, get_latest_batch_folder, download_batch_as_zip
     
     st.title(":scroll: Atria University Transcript Generator")
-    st.markdown("Generate official transcripts for students. All filter fields are **optional**.")
+    st.markdown("Generate official transcripts for students and upload to R2 storage.")
     
     # Ensure dependencies exist
     if 'setup_done' not in st.session_state:
@@ -817,8 +890,13 @@ elif page == "Transcript Generator":
                             progress_bar = st.progress(0)
                             status_text = st.empty()
                             
+                            # Generate batch timestamp for R2 folder
+                            batch_timestamp = generate_batch_timestamp()
+                            
                             generated_count = 0
                             failed_count = 0
+                            r2_uploaded_count = 0
+                            r2_keys = []
                             
                             for i, student_record in enumerate(students):
                                 student_name = student_record.get('name', 'Unknown')
@@ -830,6 +908,19 @@ elif page == "Transcript Generator":
                                     pdf_path = process_single_student_transcript(conn, student_record)
                                     if pdf_path and os.path.exists(pdf_path):
                                         generated_count += 1
+                                        
+                                        # Upload to R2
+                                        status_text.text(f"Uploading to R2 {i + 1}/{total_students}: {student_name} ({reg_no})")
+                                        success, r2_key = upload_transcript(
+                                            file_path=pdf_path,
+                                            batch_timestamp=batch_timestamp,
+                                            regn_no=reg_no,
+                                            student_name=student_name
+                                        )
+                                        
+                                        if success and r2_key:
+                                            r2_uploaded_count += 1
+                                            r2_keys.append(r2_key)
                                     else:
                                         failed_count += 1
                                 except Exception as e:
@@ -842,10 +933,27 @@ elif page == "Transcript Generator":
                             
                             if generated_count > 0:
                                 st.balloons()
-                                st.success(f"Successfully generated {generated_count} transcript(s) in '{OUTPUT_DIR}' directory.")
+                                st.success(f"Successfully generated {generated_count} transcript(s).")
+                            
+                            if r2_uploaded_count > 0:
+                                st.success(f"✅ Uploaded {r2_uploaded_count} transcripts to R2 (Folder: `{batch_timestamp}`)")
                             
                             if failed_count > 0:
                                 st.warning(f"{failed_count} transcript(s) failed to generate. Check logs for details.")
+                            
+                            # Show uploaded files with download links
+                            if r2_keys:
+                                with st.expander("📁 View Uploaded Files & Download Links"):
+                                    st.write(f"**R2 Folder:** `transcripts/{batch_timestamp}/`")
+                                    st.write(f"**Total Files:** {len(r2_keys)}")
+                                    st.markdown("---")
+                                    for r2_key in r2_keys:
+                                        filename = r2_key.split('/')[-1]
+                                        download_url = get_presigned_url(r2_key)
+                                        if download_url:
+                                            st.markdown(f"📄 [{filename}]({download_url})")
+                                        else:
+                                            st.text(f"📄 {filename} (URL unavailable)")
                             
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
@@ -854,6 +962,45 @@ elif page == "Transcript Generator":
                         conn.close()
                 else:
                     st.error(":x: Database connection failed.")
+    
+    st.markdown("---")
+    
+    # Download Section - At Bottom
+    st.subheader("📥 Download Transcripts")
+    st.markdown("Download all transcripts from the latest batch folder in R2 storage.")
+    
+    col_download_t, col_info_t = st.columns([1, 2])
+    with col_download_t:
+        if st.button("Download Latest Batch", key="download_transcripts_btn"):
+            with st.spinner("Preparing download..."):
+                zip_data, batch_ts, file_count = download_batch_as_zip('transcripts')
+                if zip_data and file_count > 0:
+                    st.session_state['transcript_zip_data'] = zip_data
+                    st.session_state['transcript_batch_ts'] = batch_ts
+                    st.session_state['transcript_file_count'] = file_count
+                    st.success(f"✅ Ready! Found {file_count} files in batch `{batch_ts}`")
+                elif batch_ts:
+                    st.warning(f"No files found in batch `{batch_ts}`")
+                else:
+                    st.warning("No batch folders found in R2 storage.")
+    
+    with col_info_t:
+        # Show latest batch info
+        latest_batch_t = get_latest_batch_folder('transcripts')
+        if latest_batch_t:
+            st.info(f"📁 Latest batch folder: `{latest_batch_t}`")
+        else:
+            st.info("📁 No batch folders found yet.")
+    
+    # Show download link if data is ready
+    if 'transcript_zip_data' in st.session_state and st.session_state['transcript_zip_data']:
+        st.download_button(
+            label=f"⬇️ Download ZIP ({st.session_state['transcript_file_count']} files)",
+            data=st.session_state['transcript_zip_data'],
+            file_name=f"transcripts_{st.session_state['transcript_batch_ts']}.zip",
+            mime="application/zip",
+            key="download_transcript_zip"
+        )
     
     st.markdown("---")
     st.caption("Transcript Generator Tool")

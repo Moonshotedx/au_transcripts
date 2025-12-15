@@ -252,19 +252,30 @@ class GradeCardGenerator:
 
 
     def generate_certificate(self, student_info, student_marks, output_filename=None):
+        """
+        Generate a grade card PDF for a student.
+        
+        Args:
+            student_info: Dictionary with student information
+            student_marks: List of course marks
+            output_filename: Optional custom filename
+        
+        Returns:
+            str: Path to the generated PDF file, or None if generation failed
+        """
         try:
             overlay = self.create_overlay(student_info, student_marks)
             if not output_filename:
                 safe_name = student_info.get("name", "Unknown").replace(' ', '_').replace('.', '')
                 reg_no = student_info.get("reg_no", "N_A")
-                # Add timestamp to filename to prevent overwriting
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_filename = f"{reg_no}_{safe_name}_GradeCard_{timestamp}.pdf"
+                output_filename = f"{reg_no}_{safe_name}_GradeCard.pdf"
             output_path = self.output_dir / output_filename
             self.merge_pdf(overlay, output_path)
             print(f"Generated grade card for {student_info.get('name', 'Unknown')} ({student_info.get('reg_no', 'N/A')}) → {output_path}")
+            return str(output_path)
         except Exception as e:
             print(f"Failed to generate grade card for {student_info.get('name', 'Unknown')} ({student_info.get('reg_no', 'N/A')}): {e}")
+            return None
 
     # --- Method to establish DB connection ---
     def get_db_connection(self):

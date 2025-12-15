@@ -169,13 +169,20 @@ def prepare_double_column_courses(courses):
     return left_column, right_column
 
 def generate_transcript(student_params, course_data, output_filename, html_template, css_file, output_dir):
-    """Generate PDF transcript with double column layout"""
-
-   # calculated_cgpa, calculated_credits = calculate_gpa_stats(course_data)
-
-   # student_params['cgpa'] = str(calculated_cgpa)
-   # student_params['total_credits'] = str(int(calculated_credits)) 
-
+    """
+    Generate PDF transcript with double column layout.
+    
+    Args:
+        student_params: Dictionary with student parameters
+        course_data: List of course data
+        output_filename: Output filename for the PDF
+        html_template: HTML template filename
+        css_file: CSS file path
+        output_dir: Output directory
+    
+    Returns:
+        str: Path to generated PDF on success, None on failure
+    """
     left_courses, right_courses = prepare_double_column_courses(course_data)
     student_params['left_courses'] = left_courses
     student_params['right_courses'] = right_courses
@@ -186,7 +193,7 @@ def generate_transcript(student_params, course_data, output_filename, html_templ
         rendered_html = template.render(student=student_params)
     except Exception as e:
         print(f"Error rendering template: {e}")
-        return False
+        return None
 
     output_path = os.path.join(output_dir, output_filename)
     try:
@@ -195,10 +202,10 @@ def generate_transcript(student_params, course_data, output_filename, html_templ
             stylesheets=[CSS(filename=css_file)]
         )
         print(f" Generated enhanced transcript: {output_path}")
-        return True
+        return output_path
     except Exception as e:
         print(f"Failed to generate PDF: {e}")
-        return False
+        return None
 
 def create_enhanced_template():
     """Create the enhanced HTML template with double column and integrated photo"""
@@ -769,10 +776,10 @@ def process_single_student_transcript(conn, student_record, base_dir=BASE_DIR):
     student_course_data = fetch_student_courses_and_marks(conn, regn_no)
 
     if student_course_data:
-        # Add timestamp to filename to prevent overwriting
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_name = f"{regn_no}_{student_params['name'].replace(' ', '_')}_Transcript_{timestamp}.pdf"
-        success = generate_transcript(
+        # Filename without timestamp (R2 batch folder handles uniqueness)
+        safe_name = student_params['name'].replace(' ', '_').replace('.', '')
+        output_name = f"{regn_no}_{safe_name}_Transcript.pdf"
+        output_path = generate_transcript(
             student_params,
             student_course_data,
             output_name,
@@ -781,9 +788,9 @@ def process_single_student_transcript(conn, student_record, base_dir=BASE_DIR):
             OUTPUT_DIR
         )
 
-        if success:
+        if output_path:
             print(f"  Transcript for {regn_no} generated successfully!")
-            return os.path.join(OUTPUT_DIR, output_name)
+            return output_path
         else:
             print(f"  Failed to generate transcript for {regn_no}.")
             return None
