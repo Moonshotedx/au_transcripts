@@ -1,6 +1,8 @@
 import streamlit as st
 import os
+import requests
 from pathlib import Path
+from streamlit_cookies_controller import CookieController
 
 # Set page configuration
 st.set_page_config(
@@ -8,6 +10,207 @@ st.set_page_config(
     page_icon=":school:",
     layout="wide"
 )
+
+cookie_controller = CookieController()
+
+COOKIE_NAME = "au_auth_session"
+COOKIE_EXPIRY_DAYS = 7
+
+def save_session_to_cookie(email: str, token: str):
+    """Save session data to browser cookie."""
+    try:
+        cookie_controller.set(COOKIE_NAME, f"{email}|{token}")
+    except Exception:
+        pass  # Silently fail if can't write
+
+def load_session_from_cookie() -> tuple[str, str]:
+    """Load session data from browser cookie if exists."""
+    try:
+        cookie_value = cookie_controller.get(COOKIE_NAME)
+        if cookie_value and "|" in cookie_value:
+            parts = cookie_value.split("|", 1)
+            return parts[0], parts[1]
+    except Exception:
+        pass
+    return None, None
+
+def clear_session_cookie():
+    """Remove the session cookie on logout."""
+    try:
+        cookie_controller.remove(COOKIE_NAME)
+    except Exception:
+        pass
+
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'auth_token' not in st.session_state:
+    st.session_state.auth_token = None
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+
+if not st.session_state.authenticated:
+    saved_email, saved_token = load_session_from_cookie()
+    if saved_email and saved_token:
+        st.session_state.authenticated = True
+        st.session_state.auth_token = saved_token
+        st.session_state.user_email = saved_email
+
+def login(email: str, password: str) -> tuple[bool, str]:
+    """
+    Authenticate user against the LearnX API.
+    Returns (success, message)
+    """
+    try:
+        response = requests.post(
+            "https://learnx.atriauniversity.in/api/v1/auth/signin",
+            json={
+                "email": email,
+                "password": password
+            },
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            # Store token in session state
+            token = data.get('token', 'session_token')
+            st.session_state.auth_token = token
+            st.session_state.user_email = email
+            st.session_state.authenticated = True
+            # Save to cookie for persistence
+            save_session_to_cookie(email, token)
+            return True, "Login successful!"
+        else:
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('message', 'Invalid email or password')
+            except:
+                error_msg = f"Authentication failed (Status: {response.status_code})"
+            return False, error_msg
+    except requests.exceptions.Timeout:
+        return False, "Connection timeout. Please try again."
+    except requests.exceptions.ConnectionError:
+        return False, "Unable to connect to the server. Please check your internet connection."
+    except Exception as e:
+        return False, f"An error occurred: {str(e)}"
+
+def logout():
+    """Clear session and logout user."""
+    st.session_state.authenticated = False
+    st.session_state.auth_token = None
+    st.session_state.user_email = None
+    clear_session_cookie()
+    st.rerun()
+
+def show_login_page():
+    """Display the login page with email and password fields."""
+    # Custom CSS for login page
+    st.markdown("""
+    <style>
+    .login-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    .login-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .login-logo {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 1rem;
+        display: block;
+    }
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 8px;
+        margin-top: 1rem;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Center the login form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        
+        # Logo and header
+        st.image("https://apps.atriauniversity.in/Atria_logo.svg", width=150, use_container_width=False)
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input(
+                "Email Address",
+                placeholder="Enter your email",
+                key="login_email"
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Enter your password",
+                key="login_password"
+            )
+            
+            submit = st.form_submit_button("Sign In", use_container_width=True)
+            
+            if submit:
+                if not email or not password:
+                    st.error("Please enter both email and password.")
+                else:
+                    with st.spinner("Authenticating..."):
+                        success, message = login(email, password)
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
+        
+if not st.session_state.authenticated:
+    show_login_page()
+    st.stop()
+
+# CSS for sidebar styling
+st.markdown("""
+<style>
+    /* Add spacing before logout section */
+    .logout-spacer {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(49, 51, 63, 0.2);
+    }
+    
+    .logout-user-email {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0 0.5rem;
+    }
+    
+    /* Style the logout button */
+    section[data-testid="stSidebar"] button[key="logout_btn"] {
+        background: #ff4b4b !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    section[data-testid="stSidebar"] button[key="logout_btn"]:hover {
+        background: #ff3333 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Sidebar navigation
 st.sidebar.image("https://apps.atriauniversity.in/Atria_logo.svg", use_container_width=True)
@@ -18,6 +221,18 @@ page = st.sidebar.radio(
     "Select Module",
     ["Course Details", "Student Details", "Grade Card Generator", "Transcript Generator"]
 )
+
+# Logout section at bottom of sidebar
+with st.sidebar:
+    # Add spacer and divider before logout section
+    st.markdown('<div class="logout-spacer"></div>', unsafe_allow_html=True)
+    
+    # User email display
+    st.markdown(f'<div class="logout-user-email">👤 {st.session_state.user_email}</div>', unsafe_allow_html=True)
+    
+    # Logout button - positioned right after the email
+    if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
+        logout()
 
 
 

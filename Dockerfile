@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     libffi-dev \
     shared-mime-info \
     # Font support
@@ -52,8 +52,8 @@ COPY r2/ ./r2/
 
 # Copy assets (templates, fonts, etc.)
 COPY assets/ ./assets/
-COPY "Grade Card Template.pdf" .
-COPY "Grade Point Table.pdf" .
+COPY ["Grade Card Template.pdf", "./"]
+COPY ["Grade Point Table.pdf", "./"]
 
 # Create output directories
 RUN mkdir -p gradecards transcripts
