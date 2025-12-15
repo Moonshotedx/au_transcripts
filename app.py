@@ -280,7 +280,7 @@ if page == "Course Details":
         data_exists, record_count = check_existing_data_in_nocodb(year_flag_input, admission_year_input)
         
         if data_exists:
-            st.warning(f"⚠️ **Warning:** Student data for Admission Year **{admission_year_input}** and YEAR_FLAG **{year_flag_input}** already exists in NocoDB. Syncing may create duplicates or update existing records.")
+            st.warning(f"⚠️ **Warning:** Student data for Admission Year **{admission_year_input}** and YEAR_FLAG **{year_flag_input}** already exists in NocoDB. Syncing may create duplicates.")
             
             # Use session state to track if user clicked "Proceed Anyway"
             proceed_key = f"proceed_anyway_{year_flag_input}_{admission_year_input}"
@@ -325,7 +325,7 @@ elif page == "Student Details":
     from urllib.parse import quote
     from db.index import NOCODB_API_BASE, NOCODB_API_TOKEN, NOCODB_HEADERS, STUDENT_DETAILS_TABLE
     
-    st.title(":bust_in_silhouette: NocoDB Student Details")
+    st.title(":bust_in_silhouette: Student Details")
     st.markdown("Upload a CSV file and specify the YEAR_FLAG to sync student details to NocoDB.")
     
     # Configs
@@ -501,7 +501,7 @@ elif page == "Student Details":
                 consolidated_data_exists, consolidated_record_count = check_existing_consolidated_data(admission_year_consolidated)
                 
                 if consolidated_data_exists:
-                    st.warning(f"⚠️ **Warning:** Student data with Admission Year **{admission_year_consolidated}** (consolidated credits and CGPA) already exists in NocoDB. Syncing may create duplicates or update existing records.")
+                    st.warning(f"⚠️ **Warning:** Student data with Admission Year **{admission_year_consolidated}** (consolidated credits and CGPA) already exists in NocoDB. Syncing may create duplicates.")
                     
                     # Use session state to track if user clicked "Proceed Anyway"
                     proceed_key_consolidated = f"proceed_anyway_consolidated_{admission_year_consolidated}"
@@ -594,7 +594,7 @@ elif page == "Student Details":
                 annual_data_exists, annual_record_count = check_existing_student_details(year_flag_annual, admission_year_annual)
                 
                 if annual_data_exists:
-                    st.warning(f"⚠️ **Warning:** Student data for Admission Year **{admission_year_annual}** and YEAR_FLAG **{year_flag_annual}** already exists in NocoDB. Syncing may create duplicates or update existing records.")
+                    st.warning(f"⚠️ **Warning:** Student data for Admission Year **{admission_year_annual}** and YEAR_FLAG **{year_flag_annual}** already exists in NocoDB. Syncing may create duplicates.")
                     
                     # Use session state to track if user clicked "Proceed Anyway"
                     proceed_key_annual = f"proceed_anyway_annual_{year_flag_annual}_{admission_year_annual}"
