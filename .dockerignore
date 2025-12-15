@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment (secrets should be passed at runtime)
+.env
+
+# Output directories (generated at runtime)
+gradecards/
+transcripts/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Jupyter notebooks (if any)
+*.ipynb
+.ipynb_checkpoints/
+
+# Documentation and misc
+*.md
+!README.md

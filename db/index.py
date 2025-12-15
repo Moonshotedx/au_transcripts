@@ -8,8 +8,10 @@ Configuration is loaded from environment variables using python-dotenv.
 
 import os
 import psycopg2
+import requests
 from psycopg2 import Error
 from dotenv import load_dotenv
+from urllib.parse import quote, urlparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,6 +36,7 @@ NOCODB_HEADERS = {
 NOCODB_SCHEMA = os.getenv("NOCODB_SCHEMA", "p7s9v2dsl9limhd")
 STUDENT_DETAILS_TABLE = "student_details"
 STUDENT_COURSES_DETAILS_TABLE = "student_courses_details"
+STUDENTS_PHOTOS_TABLE = "students_photos"
 
 
 def get_db_connection():
@@ -71,5 +74,69 @@ def get_nocodb_config():
         "headers": NOCODB_HEADERS,
         "schema": NOCODB_SCHEMA,
         "student_details_table": STUDENT_DETAILS_TABLE,
-        "student_courses_details_table": STUDENT_COURSES_DETAILS_TABLE
+        "student_courses_details_table": STUDENT_COURSES_DETAILS_TABLE,
+        "students_photos_table": STUDENTS_PHOTOS_TABLE
     }
+
+
+def fetch_student_photo_url(regn_no):
+    """
+    Fetches student photo URL from NocoDB students_photos table.
+    
+    Args:
+        regn_no: Student registration number (REG_NO in the table)
+    
+    Returns:
+        str: The STUDENT_IMAGE URL if found, None otherwise
+    """
+    if not regn_no:
+        return None
+    
+    # Extract base URL from NOCODB_API_BASE (e.g., http://33.0.0.103:8080)
+    parsed_url = urlparse(NOCODB_API_BASE)
+    nocodb_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    
+    # Build filter for REG_NO using NocoDB where syntax
+    filter_segment = f'(REG_NO,eq,{regn_no})'
+    encoded_filter = quote(filter_segment)
+    
+    get_url = f"{NOCODB_API_BASE}/{STUDENTS_PHOTOS_TABLE}?where={encoded_filter}"
+    
+    try:
+        response = requests.get(get_url, headers=NOCODB_HEADERS, timeout=30)
+        
+        if response.status_code == 200:
+            response_json = response.json()
+            if response_json.get('list') and len(response_json['list']) > 0:
+                record = response_json['list'][0]
+                student_image = record.get('STUDENT_IMAGE')
+                
+                # Handle NocoDB attachment format (array of objects)
+                if isinstance(student_image, list) and len(student_image) > 0:
+                    attachment = student_image[0]
+                    
+                    # Try different URL fields in order of preference
+                    # 1. Full URL (url or signedUrl)
+                    if attachment.get('url'):
+                        return attachment['url']
+                    if attachment.get('signedUrl'):
+                        return attachment['signedUrl']
+                    
+                    # 2. Relative path - construct full URL
+                    if attachment.get('path'):
+                        full_url = f"{nocodb_base_url}/{attachment['path']}"
+                        print(f"  Constructed photo URL for {regn_no}: {full_url[:60]}...")
+                        return full_url
+                    
+                    # 3. Signed path from thumbnails
+                    if attachment.get('signedPath'):
+                        return f"{nocodb_base_url}/{attachment['signedPath']}"
+                        
+                elif isinstance(student_image, str) and student_image:
+                    # Direct URL string
+                    return student_image
+                    
+        return None
+    except Exception as e:
+        print(f"Error fetching student photo from NocoDB for {regn_no}: {e}")
+        return None
