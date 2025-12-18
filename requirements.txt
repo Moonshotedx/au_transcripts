@@ -9,4 +9,3 @@ jinja2
 weasyprint
 python-dotenv
 boto3
-streamlit-cookies-controller
